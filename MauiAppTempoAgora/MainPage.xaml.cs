@@ -1,13 +1,13 @@
-﻿// MauiAppTempoAgora/MainPage.xaml.cs
+﻿// Conteúdo do MainPage.xaml.cs (sem alterações desde a última versão)
 using MauiAppTempoAgora.Models;
 using MauiAppTempoAgora.Services;
 using System;
 using System.Diagnostics;
-using System.Net; // Necessário para HttpStatusCode
-using Microsoft.Maui.Networking; // Necessário para Connectivity
-using Microsoft.Maui.Devices.Sensors; // Necessário para Geolocation, Geocoding, Placemark, etc.
-using Microsoft.Maui.ApplicationModel; // Necessário para PermissionException, etc.
-
+using System.Net;
+using Microsoft.Maui.Networking;
+using Microsoft.Maui.Devices.Sensors;
+using Microsoft.Maui.ApplicationModel;
+using System.Globalization;
 
 namespace MauiAppTempoAgora
 {
@@ -16,178 +16,209 @@ namespace MauiAppTempoAgora
         public MainPage()
         {
             InitializeComponent();
+            lbl_res.Text = "Digite uma cidade ou use sua localização.";
         }
 
+        // --- Handlers Botões ---
         private async void Button_Clicked_Previsao(object sender, EventArgs e)
         {
-            // 1. Verificar Conectividade
-            if (Connectivity.Current.NetworkAccess != NetworkAccess.Internet)
+            if (loadingIndicator.IsRunning) return;
+            HideKeyboard();
+            if (!await CheckConnectivity("buscar a previsão")) return;
+
+            string cidade = txt_cidade.Text;
+            if (string.IsNullOrWhiteSpace(cidade))
             {
-                await DisplayAlert("Sem Conexão", "Por favor, verifique sua conexão com a internet e tente novamente.", "OK");
+                await DisplayAlert("Entrada Inválida", "Por favor, preencha o nome da cidade.", "OK");
                 return;
             }
 
-            // 2. Verificar se a cidade foi preenchida
-            if (string.IsNullOrWhiteSpace(txt_cidade.Text))
-            {
-                lbl_res.Text = "Por favor, preencha o nome da cidade.";
-                wv_mapa.Source = null; // Limpa o mapa
-                return;
-            }
-
+            SetLoading(true, "Buscando previsão...");
+            Tempo? tempoResult = null;
+            HttpStatusCode? statusCode = null;
             try
             {
-                // 3. Chamar o DataService (que agora retorna uma tupla)
-                var (tempoResult, statusCode) = await DataService.GetPrevisao(txt_cidade.Text);
-
-                // 4. Processar o resultado
-                if (tempoResult != null && statusCode == HttpStatusCode.OK)
-                {
-                    // Sucesso! Montar a string de exibição com os dados expandidos
-                    string dados_previsao =
-                        $"Cidade: {txt_cidade.Text}\n" + // Adiciona nome da cidade para clareza
-                        $"Clima: {tempoResult.description ?? "N/A"} ({tempoResult.main ?? "N/A"})\n" + // Descrição e Main
-                        $"Temperatura Máx: {tempoResult.temp_max?.ToString("F1") ?? "N/A"} °C\n" + // Formatado com 1 casa decimal
-                        $"Temperatura Mín: {tempoResult.temp_min?.ToString("F1") ?? "N/A"} °C\n" + // Formatado com 1 casa decimal
-                        $"Velocidade do Vento: {tempoResult.speed?.ToString("F1") ?? "N/A"} m/s\n" + // Velocidade do vento
-                        $"Visibilidade: {tempoResult.visibility?.ToString() ?? "N/A"} metros\n" + // Visibilidade
-                        $"Nascer do Sol: {tempoResult.sunrise ?? "N/A"}\n" + // Já formatado como string HH:mm:ss
-                        $"Pôr do Sol: {tempoResult.sunset ?? "N/A"}\n" +   // Já formatado como string HH:mm:ss
-                        $"Latitude: {tempoResult.lat?.ToString() ?? "N/A"}\n" +
-                        $"Longitude: {tempoResult.lon?.ToString() ?? "N/A"}";
-
-                    lbl_res.Text = dados_previsao;
-
-                    // Atualizar o WebView (mantendo a lógica original com Replace)
-                    if (tempoResult.lat.HasValue && tempoResult.lon.HasValue)
-                    {
-                        string mapa = $"https://embed.windy.com/embed.html?" +
-                                      $"type=map&location=coordinates&metricRain=mm&metricTemp=°C" +
-                                      $"&metricWind=km/h&zoom=5&overlay=wind&product=ecmwf&level=surface" +
-                                      $"&lat={tempoResult.lat.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&lon={tempoResult.lon.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-                        // Usando InvariantCulture para garantir ponto decimal para a URL
-
-                        wv_mapa.Source = mapa;
-                        Debug.WriteLine(mapa);
-                    }
-                    else
-                    {
-                        wv_mapa.Source = null; // Limpa se não tiver coords
-                    }
-
-                }
-                else
-                {
-                    // Falha - Verificar o StatusCode para erro específico
-                    if (statusCode == HttpStatusCode.NotFound) // Erro 404
-                    {
-                        lbl_res.Text = $"Não foi possível encontrar dados para a cidade: {txt_cidade.Text}. Verifique o nome e tente novamente.";
-                    }
-                    else if (statusCode == HttpStatusCode.Unauthorized) // Erro 401
-                    {
-                        lbl_res.Text = "Erro de autenticação com o serviço de previsão do tempo. Verifique a chave da API.";
-                    }
-                    else if (statusCode == HttpStatusCode.BadRequest && string.IsNullOrWhiteSpace(txt_cidade.Text)) // Tratamento do erro de cidade vazia do DataService
-                    {
-                        lbl_res.Text = "Por favor, preencha o nome da cidade.";
-                    }
-                    else
-                    {
-                        // Outro erro (API fora do ar, problema de rede não capturado antes, etc.)
-                        lbl_res.Text = $"Não foi possível obter a previsão. Código de erro: {statusCode?.ToString() ?? "Desconhecido"}";
-                    }
-                    wv_mapa.Source = null; // Limpa o mapa em caso de erro
-                }
+                (tempoResult, statusCode) = await DataService.GetPrevisao(cidade);
+                ProcessWeatherResult(tempoResult, statusCode, cidade);
             }
-            catch (Exception ex)
-            {
-                // Erro inesperado durante o processo na MainPage
-                await DisplayAlert("Erro Inesperado", $"Ocorreu um erro: {ex.Message}", "OK");
-                lbl_res.Text = "Ocorreu um erro ao processar a solicitação.";
-                wv_mapa.Source = null; // Limpa o mapa
-            }
+            catch (Exception ex) { await HandleGeneralError("Erro ao buscar previsão", ex); }
+            finally { SetLoading(false); }
         }
 
         private async void Button_Clicked_Localizacao(object sender, EventArgs e)
         {
-            // 1. Verificar Conectividade (Geocoding precisa de rede)
-            if (Connectivity.Current.NetworkAccess != NetworkAccess.Internet)
-            {
-                await DisplayAlert("Sem Conexão", "É necessária conexão com a internet para obter o nome da cidade a partir da localização.", "OK");
-                return;
-            }
+            if (loadingIndicator.IsRunning) return;
+            if (!await CheckConnectivity("obter a localização")) return;
 
+            SetLoading(true, "Obtendo localização...");
+            Location? local = null;
             try
             {
-                GeolocationRequest request = new GeolocationRequest(
-                    GeolocationAccuracy.Medium,
-                    TimeSpan.FromSeconds(10)
-                );
-
-                Location? local = await Geolocation.Default.GetLocationAsync(request);
-
+                local = await GetDeviceLocation();
                 if (local != null)
                 {
-                    string local_disp = $"Latitude: {local.Latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)} \n" +
-                                        $"Longitude: {local.Longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                    string local_disp = $"Lat: {local.Latitude.ToString(CultureInfo.InvariantCulture)}, Lon: {local.Longitude.ToString(CultureInfo.InvariantCulture)}";
                     lbl_coords.Text = local_disp;
-
-                    // Pega nome da cidade que está nas coordenadas.
-                    await GetCidade(local.Latitude, local.Longitude); // Tornando a chamada awaitable
+                    SetLoading(true, "Buscando nome da cidade...");
+                    await GetCidade(local.Latitude, local.Longitude);
                 }
                 else
                 {
                     lbl_coords.Text = "Não foi possível obter a localização.";
-                    txt_cidade.Text = string.Empty; // Limpa cidade se localização falhar
+                    txt_cidade.Text = string.Empty;
                 }
             }
-            catch (FeatureNotSupportedException fnsEx)
-            {
-                await DisplayAlert("Erro: Dispositivo não Suporta", fnsEx.Message, "OK");
-            }
-            catch (FeatureNotEnabledException fneEx)
-            {
-                await DisplayAlert("Erro: Localização Desabilitada", "Por favor, habilite o serviço de localização no seu dispositivo.", "OK"); // Mensagem mais amigável
-            }
-            catch (PermissionException pEx)
-            {
-                await DisplayAlert("Erro: Permissão da Localização", "A permissão para acessar a localização foi negada. Verifique as configurações do aplicativo.", "OK"); // Mensagem mais amigável
-            }
-            catch (Exception ex)
-            {
-                await DisplayAlert("Erro ao Obter Localização", ex.Message, "OK");
-            }
+            catch (Exception ex) { await HandleGeneralError("Erro ao obter localização", ex); } // Erros específicos são tratados em GetDeviceLocation/GetCidade
+            finally { SetLoading(false); }
         }
 
-        // Marcar como async Task para poder usar await dentro e na chamada
+        private void ClearCity_Clicked(object sender, EventArgs e)
+        {
+            txt_cidade.Text = string.Empty;
+            lbl_res.Text = "Digite uma cidade ou use sua localização.";
+            lbl_coords.Text = string.Empty;
+            wv_mapa.Source = null;
+            HideKeyboard();
+        }
+
+        // --- Métodos Auxiliares ---
+        private async Task<bool> CheckConnectivity(string action)
+        {
+            if (Connectivity.Current.NetworkAccess != NetworkAccess.Internet)
+            {
+                await DisplayAlert("Sem Conexão", $"Verifique sua conexão com a internet para {action}.", "OK");
+                return false;
+            }
+            return true;
+        }
+
+        private void SetLoading(bool isLoading, string? statusText = null)
+        {
+            loadingIndicator.IsRunning = isLoading;
+            loadingIndicator.IsVisible = isLoading;
+            btnBuscarPrevisao.IsEnabled = !isLoading;
+            // btnLocalizacao.IsEnabled = !isLoading; // Se tiver nomeado o botão localização
+            btnClearCity.IsEnabled = !isLoading;
+            // Aqui você poderia atualizar um Label de status com statusText
+        }
+
+        private void ProcessWeatherResult(Tempo? tempoResult, HttpStatusCode? statusCode, string cidade)
+        {
+            if (tempoResult != null && statusCode == HttpStatusCode.OK)
+            {
+                string dados_previsao =
+                    $"📍 Cidade: {cidade}\n" +
+                    $"🌦️ Clima: {tempoResult.description ?? "N/A"} ({tempoResult.main ?? "N/A"})\n" +
+                    $"🌡️ Temp Máx/Mín: {tempoResult.temp_max?.ToString("F1", CultureInfo.InvariantCulture) ?? "N/A"}°C / {tempoResult.temp_min?.ToString("F1", CultureInfo.InvariantCulture) ?? "N/A"}°C\n" +
+                    $"🌬️ Vento: {tempoResult.speed?.ToString("F1", CultureInfo.InvariantCulture) ?? "N/A"} m/s\n" +
+                    $"👁️ Visibilidade: {tempoResult.visibility?.ToString() ?? "N/A"} metros\n" +
+                    $"☀️ Nascer do Sol: {tempoResult.sunrise ?? "N/A"}\n" +
+                    $"🌙 Pôr do Sol: {tempoResult.sunset ?? "N/A"}\n" +
+                    $"🌍 Coords: Lat {tempoResult.lat?.ToString(CultureInfo.InvariantCulture) ?? "N/A"}, Lon {tempoResult.lon?.ToString(CultureInfo.InvariantCulture) ?? "N/A"}";
+
+                lbl_res.Text = dados_previsao;
+
+                if (tempoResult.lat.HasValue && tempoResult.lon.HasValue)
+                {
+                    string latLon = $"lat={tempoResult.lat.Value.ToString(CultureInfo.InvariantCulture)}&lon={tempoResult.lon.Value.ToString(CultureInfo.InvariantCulture)}";
+                    string mapa = $"https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&zoom=9&overlay=wind&product=ecmwf&level=surface&{latLon}";
+                    Debug.WriteLine($"URL do Mapa: {mapa}");
+                    wv_mapa.Source = mapa;
+                }
+                else { wv_mapa.Source = null; }
+            }
+            else { ProcessWeatherError(statusCode, cidade); }
+        }
+
+        private void ProcessWeatherError(HttpStatusCode? statusCode, string cidade)
+        {
+            string errorMsg;
+            switch (statusCode)
+            {
+                case HttpStatusCode.NotFound: errorMsg = $"Cidade não encontrada: {cidade}."; break;
+                case HttpStatusCode.Unauthorized: errorMsg = "Erro de autenticação (API Key)."; break;
+                case HttpStatusCode.BadRequest: errorMsg = "Requisição inválida (verifique a cidade)."; break;
+                case HttpStatusCode.ServiceUnavailable: errorMsg = "Serviço indisponível ou sem rede."; break;
+                default: errorMsg = $"Erro ao obter previsão ({statusCode?.ToString() ?? "Desconhecido"})."; break;
+            }
+            lbl_res.Text = errorMsg;
+            wv_mapa.Source = null;
+            Debug.WriteLine($"Erro ao processar previsão: {errorMsg}");
+            // Considerar DisplayAlert para erros mais críticos se necessário
+        }
+
+
+        private async Task<Location?> GetDeviceLocation()
+        {
+            Location? location = null;
+            try
+            {
+                var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
+                if (status != PermissionStatus.Granted)
+                {
+                    status = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
+                    if (status != PermissionStatus.Granted) { await DisplayAlert("Permissão Necessária", "Permissão de localização é necessária.", "OK"); return null; }
+                }
+
+                location = await Geolocation.Default.GetLastKnownLocationAsync();
+                if (location == null || location.Timestamp < DateTimeOffset.UtcNow.AddMinutes(-5))
+                {
+                    GeolocationRequest request = new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(10));
+                    location = await Geolocation.Default.GetLocationAsync(request);
+                }
+            }
+            catch (FeatureNotSupportedException) { await DisplayAlert("Erro", "Localização não suportada neste dispositivo.", "OK"); }
+            catch (FeatureNotEnabledException) { await DisplayAlert("Erro", "GPS desabilitado. Por favor, habilite.", "OK"); }
+            catch (PermissionException) { await DisplayAlert("Erro", "Permissão de localização negada.", "OK"); }
+            catch (Exception ex) { await DisplayAlert("Erro Localização", $"Erro inesperado: {ex.Message}", "OK"); }
+            return location;
+        }
+
         private async Task GetCidade(double lat, double lon)
         {
-            // A verificação de conectividade já foi feita no método chamador (Button_Clicked_Localizacao)
             try
             {
                 IEnumerable<Placemark> places = await Geocoding.Default.GetPlacemarksAsync(lat, lon);
-                Placemark? place = places?.FirstOrDefault(); // Adicionado '?' para segurança
-
+                Placemark? place = places?.FirstOrDefault();
                 if (place != null)
                 {
-                    // Tenta usar Locality, se não, AdminArea, se não, CountryName
-                    txt_cidade.Text = place.Locality ?? place.AdminArea ?? place.CountryName ?? string.Empty;
-                    if (string.IsNullOrEmpty(txt_cidade.Text))
-                    {
-                        await DisplayAlert("Aviso", "Não foi possível determinar o nome da cidade/localidade para estas coordenadas.", "OK");
-                    }
+                    txt_cidade.Text = place.Locality ?? place.SubAdminArea ?? place.AdminArea ?? place.CountryName ?? string.Empty;
+                    if (string.IsNullOrEmpty(txt_cidade.Text)) { await DisplayAlert("Aviso", "Não foi possível determinar o nome da localidade.", "OK"); }
                 }
-                else
-                {
-                    await DisplayAlert("Aviso", "Não foi possível encontrar informações de localidade para estas coordenadas.", "OK");
-                    txt_cidade.Text = string.Empty; // Limpa se não encontrar
-                }
+                else { await DisplayAlert("Aviso", "Não foi possível encontrar info de localidade.", "OK"); txt_cidade.Text = string.Empty; }
             }
-            catch (Exception ex)
-            {
-                await DisplayAlert("Erro: Obtenção do nome da Cidade", $"Não foi possível obter o nome da cidade: {ex.Message}", "OK");
-                txt_cidade.Text = string.Empty; // Limpa em caso de erro
-            }
+            catch (Exception ex) { await DisplayAlert("Erro Geocoding", $"Não foi possível obter nome da cidade: {ex.Message}", "OK"); txt_cidade.Text = string.Empty; }
+        }
+
+        private void HideKeyboard()
+        {
+            if (txt_cidade.IsFocused) { txt_cidade.Unfocus(); }
+            // O método Unfocus() é a forma mais correta em MAUI.
+        }
+
+        // --- Handlers WebView ---
+        private void WebView_Navigating(object sender, WebNavigatingEventArgs e)
+        {
+            if (e.Url != null && e.Url.StartsWith("https://embed.windy.com")) { SetLoading(true, "Carregando mapa..."); }
+        }
+
+        private async void WebView_Navigated(object sender, WebNavigatedEventArgs e)
+        {
+            SetLoading(false);
+            if (e.Result == WebNavigationResult.Failure)
+            { await DisplayAlert("Erro no Mapa", $"Falha ao carregar mapa: {e.Result}", "OK"); lbl_res.Text += "\n(Falha ao carregar mapa)"; }
+            else if (e.Result == WebNavigationResult.Timeout)
+            { await DisplayAlert("Erro no Mapa", "Timeout ao carregar mapa.", "OK"); lbl_res.Text += "\n(Timeout ao carregar mapa)"; }
+        }
+
+        // --- Tratamento Genérico de Erro ---
+        private async Task HandleGeneralError(string context, Exception ex)
+        {
+            Debug.WriteLine($"Erro inesperado em {context}: {ex}");
+            await DisplayAlert("Erro Inesperado", $"Ocorreu um erro inesperado. Por favor, tente novamente.", "OK");
+            // Poderia limpar a UI ou tomar outra ação aqui
+            lbl_res.Text = "Ocorreu um erro.";
+            wv_mapa.Source = null;
         }
     }
 }

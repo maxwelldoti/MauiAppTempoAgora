@@ -1,22 +1,132 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             x:Class="MauiAppTempoAgora.MainPage">
+             x:Class="MauiAppTempoAgora.MainPage"
+             Title="Previsão do Tempo Agora"
+             BackgroundColor="{StaticResource Gray100}">
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <Style x:Key="MainButtonStyle" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="{StaticResource Primary}" />
+                <Setter Property="TextColor" Value="{StaticResource White}" />
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Padding" Value="14,10"/>
+                <Setter Property="FontAttributes" Value="Bold"/>
+                <Setter Property="HorizontalOptions" Value="Fill"/>
+                <Setter Property="MinimumHeightRequest" Value="48"/>
+                <Setter Property="VisualStateManager.VisualStateGroups">
+                    <VisualStateGroupList>
+                        <VisualStateGroup x:Name="CommonStates">
+                            <VisualState x:Name="Normal" />
+                            <VisualState x:Name="Pressed">
+                                <VisualState.Setters>
+                                    <Setter Property="BackgroundColor" Value="{StaticResource PrimaryDark}" />
+                                </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Disabled">
+                                <VisualState.Setters>
+                                    <Setter Property="BackgroundColor" Value="{StaticResource Gray300}" />
+                                    <Setter Property="TextColor" Value="{StaticResource Gray600}" />
+                                </VisualState.Setters>
+                            </VisualState>
+                        </VisualStateGroup>
+                    </VisualStateGroupList>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ClearButtonStyle" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="{StaticResource Gray200}"/>
+                <Setter Property="TextColor" Value="{StaticResource Gray900}"/>
+                <Setter Property="FontAttributes" Value="Bold"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="WidthRequest" Value="40"/>
+                <Setter Property="HeightRequest" Value="40"/>
+                <Setter Property="VerticalOptions" Value="Center"/>
+                <Setter Property="CornerRadius" Value="20"/>
+                <Setter Property="FontSize" Value="Medium"/>
+                <Setter Property="BorderWidth" Value="0"/>
+                <Setter Property="VisualStateManager.VisualStateGroups">
+                    <VisualStateGroupList>
+                        <VisualStateGroup x:Name="CommonStates">
+                            <VisualState x:Name="Normal" />
+                            <VisualState x:Name="Pressed">
+                                <VisualState.Setters>
+                                    <Setter Property="BackgroundColor" Value="{StaticResource Gray300}" />
+                                </VisualState.Setters>
+                            </VisualState>
+                        </VisualStateGroup>
+                    </VisualStateGroupList>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ResultLabelStyle" TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource Gray900}"/>
+                <Setter Property="FontSize" Value="Body"/>
+                <Setter Property="LineBreakMode" Value="WordWrap"/>
+            </Style>
+
+        </ResourceDictionary>
+    </ContentPage.Resources>
 
     <ScrollView>
-        <VerticalStackLayout
-            Padding="30,0"
-            Spacing="25">
+        <VerticalStackLayout Padding="20" Spacing="15">
 
-            <Button Text="Minha Localização" Clicked="Button_Clicked_Localizacao" />
-            <Label x:Name="lbl_coords" />
+            <Label Text="Previsão do Tempo"
+                   FontSize="Title"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center"
+                   TextColor="{StaticResource Primary}"
+                   Margin="0,0,0,15"/>
 
-            <Entry x:Name="txt_cidade" />
-            <Button Text="Buscar Previsão" Clicked="Button_Clicked_Previsao" />
+            <ActivityIndicator x:Name="loadingIndicator"
+                               IsRunning="False" IsVisible="False"
+                               Color="{StaticResource Primary}"
+                               HorizontalOptions="Center" Margin="0,5"/>
 
-            <Label x:Name="lbl_res" />
+            <Button Text="Usar Minha Localização Atual"
+                    Style="{StaticResource MainButtonStyle}"
+                    ImageSource="location_pin_image" Clicked="Button_Clicked_Localizacao"
+                    SemanticProperties.Hint="Obtém sua localização atual e preenche a cidade."/>
 
-            <WebView x:Name="wv_mapa" HeightRequest="500" />
+            <Label x:Name="lbl_coords"
+                   FontSize="Small"
+                   TextColor="{StaticResource Gray600}"
+                   HorizontalTextAlignment="Center"
+                   Margin="0,-5,0,5"/>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5" BackgroundColor="White" Padding="5" >
+                <Entry Grid.Column="0"
+                       x:Name="txt_cidade"
+                       Placeholder="Digite o nome da cidade"
+                       VerticalOptions="Center"
+                       ReturnCommand="{Binding Source={x:Reference btnBuscarPrevisao}, Path=Command}"
+                       ClearButtonVisibility="WhileEditing"
+                       BackgroundColor="Transparent"
+                       SemanticProperties.Hint="Campo para digitar o nome da cidade para busca."/>
+
+                <Button Grid.Column="1"
+                        x:Name="btnClearCity"
+                        Text="X"
+                        Style="{StaticResource ClearButtonStyle}"
+                        Clicked="ClearCity_Clicked"
+                        SemanticProperties.Hint="Limpa o campo de nome da cidade."/>
+            </Grid>
+
+            <Button x:Name="btnBuscarPrevisao"
+                    Text="Buscar Previsão do Tempo"
+                    Style="{StaticResource MainButtonStyle}"
+                    ImageSource="search_icon_image" Clicked="Button_Clicked_Previsao"
+                    SemanticProperties.Hint="Busca a previsão do tempo para a cidade digitada."/>
+
+            <Frame Padding="15" CornerRadius="8" BorderColor="{StaticResource Gray200}" HasShadow="False" BackgroundColor="White" Margin="0,10,0,0">
+                <Label x:Name="lbl_res" Style="{StaticResource ResultLabelStyle}"/>
+            </Frame>
+
+            <Frame Padding="0" CornerRadius="8" BorderColor="{StaticResource Gray200}" Margin="0,10,0,0" HeightRequest="350" VerticalOptions="FillAndExpand" IsClippedToBounds="True">
+                <WebView x:Name="wv_mapa"
+                          Navigating="WebView_Navigating"
+                          Navigated="WebView_Navigated" />
+            </Frame>
 
         </VerticalStackLayout>
     </ScrollView>

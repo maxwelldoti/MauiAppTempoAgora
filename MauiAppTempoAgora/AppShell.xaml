@@ -8,8 +8,7 @@
     Title="MauiAppTempoAgora">
 
     <ShellContent
-        Title="Home"
-        ContentTemplate="{DataTemplate local:MainPage}"
+        Title="Previsão do Tempo" ContentTemplate="{DataTemplate local:MainPage}"
         Route="MainPage" />
 
 </Shell>
